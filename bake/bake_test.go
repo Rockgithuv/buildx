@@ -692,7 +692,7 @@ func TestHCLContextCwdPrefix(t *testing.T) {
 	require.Contains(t, m, "app")
 	assert.Equal(t, "test", *m["app"].Dockerfile)
 	assert.Equal(t, "foo", *m["app"].Context)
-	assert.Equal(t, "foo/test", bo["app"].Inputs.DockerfilePath)
+	assert.Equal(t, filepath.Clean("foo/test"), bo["app"].Inputs.DockerfilePath)
 	assert.Equal(t, "foo", bo["app"].Inputs.ContextPath)
 }
 
@@ -1381,7 +1381,6 @@ target "d" {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			m, g, err := ReadTargets(ctx, []File{f}, []string{"d"}, tt.overrides, nil, &EntitlementConf{})
 			require.NoError(t, err)
@@ -1454,7 +1453,6 @@ group "default" {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			m, g, err := ReadTargets(ctx, []File{f}, []string{"default"}, tt.overrides, nil, &EntitlementConf{})
 			require.NoError(t, err)
@@ -1509,7 +1507,6 @@ func TestTargetName(t *testing.T) {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.target, func(t *testing.T) {
 			_, _, err := ReadTargets(ctx, []File{{
 				Name: "docker-bake.hcl",
@@ -1600,7 +1597,6 @@ target "f" {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(strings.Join(tt.names, "+"), func(t *testing.T) {
 			m, g, err := ReadTargets(ctx, []File{f}, tt.names, nil, nil, &EntitlementConf{})
 			require.NoError(t, err)
@@ -2140,6 +2136,73 @@ target "app" {
 		require.Error(t, err)
 		require.Contains(t, err.Error(), "FOO must be greater than 5.")
 	})
+}
+
+func TestVariableValidationConditionNull(t *testing.T) {
+	fp := File{
+		Name: "docker-bake.hcl",
+		Data: []byte(`
+variable "PORT" {
+  default = 3000
+  validation {}
+}
+target "app" {
+  args = {
+    PORT = PORT
+  }
+}
+`),
+	}
+
+	_, _, err := ReadTargets(context.TODO(), []File{fp}, []string{"app"}, nil, nil, &EntitlementConf{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Condition expression must return either true or false, not null")
+}
+
+func TestVariableValidationConditionUnknownValue(t *testing.T) {
+	fp := File{
+		Name: "docker-bake.hcl",
+		Data: []byte(`
+variable "PORT" {
+  default = 3000
+  validation {
+    condition = "foo"
+  }
+}
+target "app" {
+  args = {
+    PORT = PORT
+  }
+}
+`),
+	}
+
+	_, _, err := ReadTargets(context.TODO(), []File{fp}, []string{"app"}, nil, nil, &EntitlementConf{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "Invalid condition result value: a bool is required")
+}
+
+func TestVariableValidationInvalidErrorMessage(t *testing.T) {
+	fp := File{
+		Name: "docker-bake.hcl",
+		Data: []byte(`
+variable "FOO" {
+  default = 0
+  validation {
+    condition = FOO > 5
+  }
+}
+target "app" {
+  args = {
+    FOO = FOO
+  }
+}
+`),
+	}
+
+	_, _, err := ReadTargets(context.TODO(), []File{fp}, []string{"app"}, nil, nil, &EntitlementConf{})
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "This check failed, but has an invalid error message")
 }
 
 // https://github.com/docker/buildx/issues/2822

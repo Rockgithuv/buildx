@@ -16,7 +16,7 @@ import (
 	"github.com/docker/cli/cli/command"
 	"github.com/moby/buildkit/util/progress/progressui"
 	"github.com/opencontainers/go-digest"
-	ocispec "github.com/opencontainers/image-spec/specs-go/v1"
+	ocispecs "github.com/opencontainers/image-spec/specs-go/v1"
 	"github.com/pkg/errors"
 	"github.com/spf13/cobra"
 	"golang.org/x/sync/errgroup"
@@ -184,7 +184,6 @@ func runCreate(ctx context.Context, dockerCli command.Cli, in createOptions, arg
 	pw := progress.WithPrefix(printer, "internal", true)
 
 	for _, t := range tags {
-		t := t
 		eg.Go(func() error {
 			return progress.Wrap(fmt.Sprintf("pushing %s", t.String()), pw.Write, func(sub progress.SubLogger) error {
 				eg2, _ := errgroup.WithContext(ctx)
@@ -246,7 +245,7 @@ func parseSource(in string) (*imagetools.Source, error) {
 	dgst, err := digest.Parse(in)
 	if err == nil {
 		return &imagetools.Source{
-			Desc: ocispec.Descriptor{
+			Desc: ocispecs.Descriptor{
 				Digest: dgst,
 			},
 		}, nil
@@ -274,7 +273,7 @@ func createCmd(dockerCli command.Cli, opts RootOptions) *cobra.Command {
 	var options createOptions
 
 	cmd := &cobra.Command{
-		Use:   "create [OPTIONS] [SOURCE] [SOURCE...]",
+		Use:   "create [OPTIONS] [SOURCE...]",
 		Short: "Create a new image based on source images",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			options.builder = *opts.Builder
@@ -295,9 +294,9 @@ func createCmd(dockerCli command.Cli, opts RootOptions) *cobra.Command {
 	return cmd
 }
 
-func mergeDesc(d1, d2 ocispec.Descriptor) (ocispec.Descriptor, error) {
+func mergeDesc(d1, d2 ocispecs.Descriptor) (ocispecs.Descriptor, error) {
 	if d2.Size != 0 && d1.Size != d2.Size {
-		return ocispec.Descriptor{}, errors.Errorf("invalid size mismatch for %s, %d != %d", d1.Digest, d2.Size, d1.Size)
+		return ocispecs.Descriptor{}, errors.Errorf("invalid size mismatch for %s, %d != %d", d1.Digest, d2.Size, d1.Size)
 	}
 	if d2.MediaType != "" {
 		d1.MediaType = d2.MediaType

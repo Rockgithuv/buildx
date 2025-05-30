@@ -463,6 +463,21 @@ services:
 	require.NoError(t, err)
 }
 
+func TestPlatforms(t *testing.T) {
+	dt := []byte(`
+services:
+  foo:
+    build:
+      context: .
+      platforms:
+        - linux/amd64
+        - linux/arm64
+`)
+	c, err := ParseCompose([]composetypes.ConfigFile{{Content: dt}}, nil)
+	require.NoError(t, err)
+	require.Equal(t, []string{"linux/amd64", "linux/arm64"}, c.Targets[0].Platforms)
+}
+
 func newBool(val bool) *bool {
 	b := val
 	return &b
@@ -503,7 +518,6 @@ func TestServiceName(t *testing.T) {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.svc, func(t *testing.T) {
 			_, err := ParseCompose([]composetypes.ConfigFile{{Content: []byte(`
 services:
@@ -574,7 +588,6 @@ services:
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			_, err := ParseCompose([]composetypes.ConfigFile{{Content: tt.dt}}, nil)
 			if tt.wantErr {
@@ -650,7 +663,6 @@ target "default" {
 		},
 	}
 	for _, tt := range cases {
-		tt := tt
 		t.Run(tt.name, func(t *testing.T) {
 			isCompose, err := validateComposeFile(tt.dt, tt.fn)
 			assert.Equal(t, tt.isCompose, isCompose)
@@ -796,6 +808,37 @@ services:
 		require.Len(t, c.Targets[0].Args, 1)
 		require.Equal(t, map[string]*string{"PROJECT_NAME": ptrstr("foo")}, c.Targets[0].Args)
 	})
+}
+
+func TestServiceContext(t *testing.T) {
+	dt := []byte(`
+services:
+  base:
+    build:
+      dockerfile: baseapp.Dockerfile
+    command: ./entrypoint.sh
+  webapp:
+    build:
+      context: ./dir
+      additional_contexts:
+        base: service:base
+`)
+
+	c, err := ParseCompose([]composetypes.ConfigFile{{Content: dt}}, nil)
+	require.NoError(t, err)
+
+	require.Equal(t, 1, len(c.Groups))
+	require.Equal(t, "default", c.Groups[0].Name)
+	sort.Strings(c.Groups[0].Targets)
+	require.Equal(t, []string{"base", "webapp"}, c.Groups[0].Targets)
+
+	require.Equal(t, 2, len(c.Targets))
+	sort.Slice(c.Targets, func(i, j int) bool {
+		return c.Targets[i].Name < c.Targets[j].Name
+	})
+
+	require.Equal(t, "webapp", c.Targets[1].Name)
+	require.Equal(t, map[string]string{"base": "target:base"}, c.Targets[1].Contexts)
 }
 
 // chdir changes the current working directory to the named directory,

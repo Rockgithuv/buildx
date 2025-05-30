@@ -7,15 +7,13 @@ import (
 	"path/filepath"
 
 	"github.com/docker/buildx/commands"
-	controllererrors "github.com/docker/buildx/controller/errdefs"
 	"github.com/docker/buildx/util/desktop"
 	"github.com/docker/buildx/version"
 	"github.com/docker/cli/cli"
-	"github.com/docker/cli/cli-plugins/manager"
+	"github.com/docker/cli/cli-plugins/metadata"
 	"github.com/docker/cli/cli-plugins/plugin"
 	"github.com/docker/cli/cli/command"
 	"github.com/docker/cli/cli/debug"
-	cliflags "github.com/docker/cli/cli/flags"
 	"github.com/moby/buildkit/solver/errdefs"
 	"github.com/moby/buildkit/util/stack"
 	"github.com/pkg/errors"
@@ -37,11 +35,7 @@ func init() {
 }
 
 func runStandalone(cmd *command.DockerCli) error {
-	if err := cmd.Initialize(cliflags.NewClientOptions()); err != nil {
-		return err
-	}
 	defer flushMetrics(cmd)
-
 	executable := os.Args[0]
 	rootCmd := commands.NewRootCmd(filepath.Base(executable), false, cmd)
 	return rootCmd.Execute()
@@ -64,7 +58,7 @@ func flushMetrics(cmd *command.DockerCli) {
 
 func runPlugin(cmd *command.DockerCli) error {
 	rootCmd := commands.NewRootCmd("buildx", true, cmd)
-	return plugin.RunPlugin(cmd, rootCmd, manager.Metadata{
+	return plugin.RunPlugin(cmd, rootCmd, metadata.Metadata{
 		SchemaVersion: "0.1.0",
 		Vendor:        "Docker Inc.",
 		Version:       version.Version,
@@ -117,11 +111,6 @@ func main() {
 	var ebr *desktop.ErrorWithBuildRef
 	if errors.As(err, &ebr) {
 		ebr.Print(cmd.Err())
-	} else {
-		var be *controllererrors.BuildError
-		if errors.As(err, &be) {
-			be.PrintBuildDetails(cmd.Err())
-		}
 	}
 
 	os.Exit(1)

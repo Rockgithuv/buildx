@@ -62,7 +62,6 @@ func ParseCompose(cfgs []composetypes.ConfigFile, envs map[string]string) (*Conf
 		g := &Group{Name: "default"}
 
 		for _, s := range cfg.Services {
-			s := s
 			if s.Build == nil {
 				continue
 			}
@@ -92,6 +91,9 @@ func ParseCompose(cfgs []composetypes.ConfigFile, envs map[string]string) (*Conf
 			if s.Build.AdditionalContexts != nil {
 				additionalContexts = map[string]string{}
 				for k, v := range s.Build.AdditionalContexts {
+					if strings.HasPrefix(v, "service:") {
+						v = strings.Replace(v, "service:", "target:", 1)
+					}
 					additionalContexts[k] = v
 				}
 			}
@@ -141,7 +143,6 @@ func ParseCompose(cfgs []composetypes.ConfigFile, envs map[string]string) (*Conf
 			// compose does not support nil values for labels
 			labels := map[string]*string{}
 			for k, v := range s.Build.Labels {
-				v := v
 				labels[k] = &v
 			}
 
@@ -174,6 +175,7 @@ func ParseCompose(cfgs []composetypes.ConfigFile, envs map[string]string) (*Conf
 				CacheFrom:   cacheFrom,
 				CacheTo:     cacheTo,
 				NetworkMode: networkModeP,
+				Platforms:   s.Build.Platforms,
 				SSH:         ssh,
 				Secrets:     secrets,
 				ShmSize:     shmSize,
@@ -214,7 +216,7 @@ func validateComposeFile(dt []byte, fn string) (bool, error) {
 }
 
 func validateCompose(dt []byte, envs map[string]string) error {
-	_, err := loader.Load(composetypes.ConfigDetails{
+	_, err := loader.LoadWithContext(context.Background(), composetypes.ConfigDetails{
 		ConfigFiles: []composetypes.ConfigFile{
 			{
 				Content: dt,

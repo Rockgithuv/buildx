@@ -3,7 +3,9 @@ package bake
 import (
 	"context"
 	"encoding"
+	"encoding/json"
 	"io"
+	"maps"
 	"os"
 	"path"
 	"path/filepath"
@@ -481,8 +483,7 @@ func (c Config) expandTargets(pattern string) ([]string, error) {
 func (c Config) loadLinks(name string, t *Target, m map[string]*Target, o map[string]map[string]Override, visited []string, ent *EntitlementConf) error {
 	visited = append(visited, name)
 	for _, v := range t.Contexts {
-		if strings.HasPrefix(v, "target:") {
-			target := strings.TrimPrefix(v, "target:")
+		if target, ok := strings.CutPrefix(v, "target:"); ok {
 			if target == name {
 				return errors.Errorf("target %s cannot link to itself", target)
 			}
@@ -730,6 +731,41 @@ type Target struct {
 
 	// linked is a private field to mark a target used as a linked one
 	linked bool
+}
+
+func (t *Target) MarshalJSON() ([]byte, error) {
+	tgt := *t
+	esc := func(s string) string {
+		return strings.ReplaceAll(strings.ReplaceAll(s, "${", "$${"), "%{", "%%{")
+	}
+
+	tgt.Annotations = slices.Clone(t.Annotations)
+	for i, v := range tgt.Annotations {
+		tgt.Annotations[i] = esc(v)
+	}
+
+	if tgt.DockerfileInline != nil {
+		escaped := esc(*tgt.DockerfileInline)
+		tgt.DockerfileInline = &escaped
+	}
+
+	tgt.Labels = maps.Clone(t.Labels)
+	for k, v := range t.Labels {
+		if v != nil {
+			escaped := esc(*v)
+			tgt.Labels[k] = &escaped
+		}
+	}
+
+	tgt.Args = maps.Clone(t.Args)
+	for k, v := range t.Args {
+		if v != nil {
+			escaped := esc(*v)
+			tgt.Args[k] = &escaped
+		}
+	}
+
+	return json.Marshal(tgt)
 }
 
 var (
@@ -1104,9 +1140,7 @@ func (t *Target) GetEvalContexts(ectx *hcl.EvalContext, block *hcl.Block, loadDe
 				e2 := ectx.NewChild()
 				e2.Variables = make(map[string]cty.Value)
 				if e != ectx {
-					for k, v := range e.Variables {
-						e2.Variables[k] = v
-					}
+					maps.Copy(e2.Variables, e.Variables)
 				}
 				e2.Variables[k] = v
 				ectxs2 = append(ectxs2, e2)
@@ -1240,8 +1274,8 @@ func collectLocalPaths(t build.Inputs) []string {
 		if v, ok := isLocalPath(t.DockerfilePath); ok {
 			out = append(out, v)
 		}
-	} else if strings.HasPrefix(t.ContextPath, "cwd://") {
-		out = append(out, strings.TrimPrefix(t.ContextPath, "cwd://"))
+	} else if v, ok := strings.CutPrefix(t.ContextPath, "cwd://"); ok {
+		out = append(out, v)
 	}
 	for _, v := range t.NamedContexts {
 		if v.State != nil {
@@ -1293,11 +1327,11 @@ func toBuildOpt(t *Target, inp *Input) (*build.Options, error) {
 		bi.DockerfileInline = *t.DockerfileInline
 	}
 	updateContext(&bi, inp)
-	if strings.HasPrefix(bi.DockerfilePath, "cwd://") {
+	if v, ok := strings.CutPrefix(bi.DockerfilePath, "cwd://"); ok {
 		// If Dockerfile is local for a remote invocation, we first check if
 		// it's not outside the working directory and then resolve it to an
 		// absolute path.
-		bi.DockerfilePath = path.Clean(strings.TrimPrefix(bi.DockerfilePath, "cwd://"))
+		bi.DockerfilePath = path.Clean(v)
 		var err error
 		bi.DockerfilePath, err = filepath.Abs(bi.DockerfilePath)
 		if err != nil {
@@ -1322,15 +1356,15 @@ func toBuildOpt(t *Target, inp *Input) (*build.Options, error) {
 			return nil, errors.Errorf("reading a dockerfile for a remote build invocation is currently not supported")
 		}
 	}
-	if strings.HasPrefix(bi.ContextPath, "cwd://") {
-		bi.ContextPath = path.Clean(strings.TrimPrefix(bi.ContextPath, "cwd://"))
+	if v, ok := strings.CutPrefix(bi.ContextPath, "cwd://"); ok {
+		bi.ContextPath = path.Clean(v)
 	}
-	if !build.IsRemoteURL(bi.ContextPath) && bi.ContextState == nil && !path.IsAbs(bi.DockerfilePath) {
-		bi.DockerfilePath = path.Join(bi.ContextPath, bi.DockerfilePath)
+	if !build.IsRemoteURL(bi.ContextPath) && bi.ContextState == nil && !filepath.IsAbs(bi.DockerfilePath) {
+		bi.DockerfilePath = filepath.Join(bi.ContextPath, bi.DockerfilePath)
 	}
 	for k, v := range bi.NamedContexts {
-		if strings.HasPrefix(v.Path, "cwd://") {
-			bi.NamedContexts[k] = build.NamedContext{Path: path.Clean(strings.TrimPrefix(v.Path, "cwd://"))}
+		if v, ok := strings.CutPrefix(v.Path, "cwd://"); ok {
+			bi.NamedContexts[k] = build.NamedContext{Path: path.Clean(v)}
 		}
 	}
 

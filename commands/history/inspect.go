@@ -335,9 +335,9 @@ workers0:
 			out.Error.Sources = errsources.Bytes()
 			var ve *errdefs.VertexError
 			if errors.As(retErr, &ve) {
-				dgst, err := digest.Parse(ve.Vertex.Digest)
+				dgst, err := digest.Parse(ve.Digest)
 				if err != nil {
-					return errors.Wrapf(err, "failed to parse vertex digest %s", ve.Vertex.Digest)
+					return errors.Wrapf(err, "failed to parse vertex digest %s", ve.Digest)
 				}
 				name, logs, err := loadVertexLogs(ctx, c, rec.Ref, dgst, 16)
 				if err != nil {
@@ -525,9 +525,10 @@ workers0:
 	}
 	fmt.Fprintf(tw, "Duration:\t%s%s\n", formatDuration(out.Duration), statusStr)
 
-	if out.Status == statusError {
+	switch out.Status {
+	case statusError:
 		fmt.Fprintf(tw, "Error:\t%s %s\n", codes.Code(rec.Error.Code).String(), rec.Error.Message)
-	} else if out.Status == statusCanceled {
+	case statusCanceled:
 		fmt.Fprintf(tw, "Status:\tCanceled\n")
 	}
 
@@ -648,7 +649,7 @@ func inspectCmd(dockerCli command.Cli, rootOpts RootOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "inspect [OPTIONS] [REF]",
-		Short: "Inspect a build",
+		Short: "Inspect a build record",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
@@ -868,9 +869,9 @@ func printTable(w io.Writer, kvs []keyValueOutput, title string) {
 func readKeyValues(attrs map[string]string, prefix string) []keyValueOutput {
 	var out []keyValueOutput
 	for k, v := range attrs {
-		if strings.HasPrefix(k, prefix) {
+		if name, ok := strings.CutPrefix(k, prefix); ok {
 			out = append(out, keyValueOutput{
-				Name:  strings.TrimPrefix(k, prefix),
+				Name:  name,
 				Value: v,
 			})
 		}

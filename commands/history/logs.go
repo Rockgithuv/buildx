@@ -63,7 +63,7 @@ func runLogs(ctx context.Context, dockerCli command.Cli, opts logsOptions) error
 		return err
 	}
 
-	var mode progressui.DisplayMode = progressui.DisplayMode(opts.progress)
+	mode := progressui.DisplayMode(opts.progress)
 	if mode == progressui.AutoMode {
 		mode = progressui.PlainMode
 	}
@@ -98,7 +98,7 @@ func logsCmd(dockerCli command.Cli, rootOpts RootOptions) *cobra.Command {
 
 	cmd := &cobra.Command{
 		Use:   "logs [OPTIONS] [REF]",
-		Short: "Print the logs of a build",
+		Short: "Print the logs of a build record",
 		Args:  cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {

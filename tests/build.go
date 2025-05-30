@@ -19,6 +19,7 @@ import (
 	"github.com/docker/buildx/localstate"
 	"github.com/docker/buildx/util/confutil"
 	"github.com/docker/buildx/util/gitutil"
+	"github.com/docker/buildx/util/gitutil/gittestutil"
 	"github.com/moby/buildkit/client"
 	"github.com/moby/buildkit/frontend/subrequests/lint"
 	"github.com/moby/buildkit/frontend/subrequests/outline"
@@ -126,10 +127,10 @@ COPY foo /foo
 	git, err := gitutil.New(gitutil.WithWorkingDir(dir))
 	require.NoError(t, err)
 
-	gitutil.GitInit(git, t)
-	gitutil.GitAdd(git, t, "Dockerfile", "foo")
-	gitutil.GitCommit(git, t, "initial commit")
-	addr := gitutil.GitServeHTTP(git, t)
+	gittestutil.GitInit(git, t)
+	gittestutil.GitAdd(git, t, "Dockerfile", "foo")
+	gittestutil.GitCommit(git, t, "initial commit")
+	addr := gittestutil.GitServeHTTP(git, t)
 
 	out, err := buildCmd(sb, withDir(dir), withArgs("--output=type=local,dest="+dirDest, addr))
 	require.NoError(t, err, out)
@@ -238,10 +239,10 @@ COPY foo /foo
 	git, err := gitutil.New(gitutil.WithWorkingDir(dir))
 	require.NoError(t, err)
 
-	gitutil.GitInit(git, t)
-	gitutil.GitAdd(git, t, "build.Dockerfile", "foo")
-	gitutil.GitCommit(git, t, "initial commit")
-	addr := gitutil.GitServeHTTP(git, t)
+	gittestutil.GitInit(git, t)
+	gittestutil.GitAdd(git, t, "build.Dockerfile", "foo")
+	gittestutil.GitCommit(git, t, "initial commit")
+	addr := gittestutil.GitServeHTTP(git, t)
 
 	out, err := buildCmd(sb, withDir(dir), withArgs(
 		"-f", "build.Dockerfile",
@@ -398,18 +399,25 @@ func testImageIDOutput(t *testing.T, sb integration.Sandbox) {
 
 	require.Equal(t, dgst.String(), strings.TrimSpace(stdout.String()))
 
+	// read the md.json file
 	dt, err = os.ReadFile(filepath.Join(targetDir, "md.json"))
 	require.NoError(t, err)
 
 	type mdT struct {
+		Digest       string `json:"containerimage.digest"`
 		ConfigDigest string `json:"containerimage.config.digest"`
 	}
+
 	var md mdT
 	err = json.Unmarshal(dt, &md)
 	require.NoError(t, err)
 
 	require.NotEmpty(t, md.ConfigDigest)
-	require.Equal(t, dgst, digest.Digest(md.ConfigDigest))
+	require.NotEmpty(t, md.Digest)
+
+	// verify the image ID output is correct
+	// XXX: improve this by checking that it's one of the two expected digests depending on the scenario.
+	require.Contains(t, []digest.Digest{digest.Digest(md.ConfigDigest), digest.Digest(md.Digest)}, dgst)
 }
 
 func testBuildMobyFromLocalImage(t *testing.T, sb integration.Sandbox) {
@@ -510,7 +518,10 @@ func testBuildProgress(t *testing.T, sb integration.Sandbox) {
 
 	// progress=tty
 	cmd := buildxCmd(sb, withArgs("build", "--progress=tty", "--output=type=cacheonly", dir))
-	f, err := pty.Start(cmd)
+	f, err := pty.StartWithSize(cmd, &pty.Winsize{
+		Cols: 120,
+		Rows: 24,
+	})
 	require.NoError(t, err)
 	buf := bytes.NewBuffer(nil)
 	io.Copy(buf, f)

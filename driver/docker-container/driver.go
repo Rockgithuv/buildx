@@ -12,6 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
+	cerrdefs "github.com/containerd/errdefs"
 	"github.com/docker/buildx/driver"
 	"github.com/docker/buildx/driver/bkimage"
 	"github.com/docker/buildx/util/confutil"
@@ -23,12 +24,10 @@ import (
 	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/system"
-	"github.com/docker/docker/errdefs"
-	dockerarchive "github.com/docker/docker/pkg/archive"
-	"github.com/docker/docker/pkg/idtools"
 	"github.com/docker/docker/pkg/jsonmessage"
 	"github.com/docker/docker/pkg/stdcopy"
 	"github.com/moby/buildkit/client"
+	mobyarchive "github.com/moby/go-archive"
 	"github.com/pkg/errors"
 )
 
@@ -71,7 +70,7 @@ func (d *Driver) Bootstrap(ctx context.Context, l progress.Logger) error {
 	return progress.Wrap("[internal] booting buildkit", l, func(sub progress.SubLogger) error {
 		_, err := d.DockerAPI.ContainerInspect(ctx, d.Name)
 		if err != nil {
-			if errdefs.IsNotFound(err) {
+			if cerrdefs.IsNotFound(err) {
 				return d.create(ctx, sub)
 			}
 			return err
@@ -139,28 +138,28 @@ func (d *Driver) create(ctx context.Context, l progress.SubLogger) error {
 			hc.NetworkMode = container.NetworkMode(d.netMode)
 		}
 		if d.memory != 0 {
-			hc.Resources.Memory = int64(d.memory)
+			hc.Memory = int64(d.memory)
 		}
 		if d.memorySwap != 0 {
-			hc.Resources.MemorySwap = int64(d.memorySwap)
+			hc.MemorySwap = int64(d.memorySwap)
 		}
 		if d.cpuQuota != 0 {
-			hc.Resources.CPUQuota = d.cpuQuota
+			hc.CPUQuota = d.cpuQuota
 		}
 		if d.cpuPeriod != 0 {
-			hc.Resources.CPUPeriod = d.cpuPeriod
+			hc.CPUPeriod = d.cpuPeriod
 		}
 		if d.cpuShares != 0 {
-			hc.Resources.CPUShares = d.cpuShares
+			hc.CPUShares = d.cpuShares
 		}
 		if d.cpusetCpus != "" {
-			hc.Resources.CpusetCpus = d.cpusetCpus
+			hc.CpusetCpus = d.cpusetCpus
 		}
 		if d.cpusetMems != "" {
-			hc.Resources.CpusetMems = d.cpusetMems
+			hc.CpusetMems = d.cpusetMems
 		}
 		if len(d.gpus) > 0 && d.hasGPUCapability(ctx, cfg.Image, d.gpus) {
-			hc.Resources.DeviceRequests = d.gpus
+			hc.DeviceRequests = d.gpus
 		}
 		if info, err := d.DockerAPI.Info(ctx); err == nil {
 			if info.CgroupDriver == "cgroupfs" {
@@ -184,11 +183,11 @@ func (d *Driver) create(ctx context.Context, l progress.SubLogger) error {
 			}
 		}
 		_, err := d.DockerAPI.ContainerCreate(ctx, cfg, hc, &network.NetworkingConfig{}, nil, d.Name)
-		if err != nil && !errdefs.IsConflict(err) {
+		if err != nil && !cerrdefs.IsConflict(err) {
 			return err
 		}
 		if err == nil {
-			if err := d.copyToContainer(ctx, d.InitConfig.Files); err != nil {
+			if err := d.copyToContainer(ctx, d.Files); err != nil {
 				return err
 			}
 			if err := d.start(ctx); err != nil {
@@ -250,8 +249,8 @@ func (d *Driver) copyToContainer(ctx context.Context, files map[string][]byte) e
 	if srcPath != "" {
 		defer os.RemoveAll(srcPath)
 	}
-	srcArchive, err := dockerarchive.TarWithOptions(srcPath, &dockerarchive.TarOptions{
-		ChownOpts: &idtools.Identity{UID: 0, GID: 0},
+	srcArchive, err := mobyarchive.TarWithOptions(srcPath, &mobyarchive.TarOptions{
+		ChownOpts: &mobyarchive.ChownOpts{UID: 0, GID: 0},
 	})
 	if err != nil {
 		return err
@@ -311,7 +310,7 @@ func (d *Driver) start(ctx context.Context) error {
 func (d *Driver) Info(ctx context.Context) (*driver.Info, error) {
 	ctn, err := d.DockerAPI.ContainerInspect(ctx, d.Name)
 	if err != nil {
-		if errdefs.IsNotFound(err) {
+		if cerrdefs.IsNotFound(err) {
 			return &driver.Info{
 				Status: driver.Inactive,
 			}, nil

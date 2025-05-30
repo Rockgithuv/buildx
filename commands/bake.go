@@ -136,7 +136,7 @@ func runBake(ctx context.Context, dockerCli command.Cli, targets []string, in ba
 
 	// instance only needed for reading remote bake files or building
 	var driverType string
-	if url != "" || !(in.print || in.list != "") {
+	if url != "" || (!in.print && in.list == "") {
 		b, err := builder.New(dockerCli,
 			builder.WithName(in.builder),
 			builder.WithContextPathHash(contextPathHash),
@@ -261,13 +261,18 @@ func runBake(ctx context.Context, dockerCli command.Cli, targets []string, in ba
 		return err
 	}
 
-	for _, opt := range bo {
+	for k, opt := range bo {
 		if opt.CallFunc != nil {
 			cf, err := buildflags.ParseCallFunc(opt.CallFunc.Name)
 			if err != nil {
 				return err
 			}
-			opt.CallFunc.Name = cf.Name
+			if cf == nil {
+				opt.CallFunc = nil
+				bo[k] = opt
+			} else {
+				opt.CallFunc.Name = cf.Name
+			}
 		}
 	}
 
@@ -424,6 +429,14 @@ func runBake(ctx context.Context, dockerCli command.Cli, targets []string, in ba
 		fmt.Fprintln(dockerCli.Out(), string(dt))
 	}
 
+	for _, name := range names {
+		if sp, ok := resp[name]; ok {
+			if v, ok := sp.ExporterResponse["frontend.result.inlinemessage"]; ok {
+				fmt.Fprintf(dockerCli.Out(), "\n# %s\n%s\n", name, v)
+			}
+		}
+	}
+
 	if exitCode != 0 {
 		os.Exit(exitCode)
 	}
@@ -546,8 +559,7 @@ func readBakeFiles(ctx context.Context, nodes []builder.Node, url string, names 
 	var rnames []string // remote
 	var anames []string // both
 	for _, v := range names {
-		if strings.HasPrefix(v, "cwd://") {
-			tname := strings.TrimPrefix(v, "cwd://")
+		if tname, ok := strings.CutPrefix(v, "cwd://"); ok {
 			lnames = append(lnames, tname)
 			anames = append(anames, tname)
 		} else {
